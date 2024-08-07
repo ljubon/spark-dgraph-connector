@@ -55,20 +55,21 @@ jobs:
           # get latest and release version
           latest=$(grep --max-count=1 "<version>.*</version>" README.md | sed -E -e "s/\s*<[^>]+>//g" -e "s/-[0-9.]+//g")
           version=$(grep --max-count=1 "<version>.*</version>" pom.xml | sed -E -e "s/\s*<[^>]+>//g" -e "s/-SNAPSHOT//" -e "s/-[0-9.]+//g")
+          spark=$(git rev-parse --abbrev-ref HEAD | sed -e "s/^spark-//" -e "s/_.*//")
 
           # update change
           echo "Releasing ${#changes[@]} changes as version $version:"
           for (( i=0; i<${#changes[@]}; i++ )); do echo "${changes[$i]}" ; done
+
           sed -i "s/## \[UNRELEASED\] - YYYY-MM-DD/## [$version] - $(date +%Y-%m-%d)/" CHANGELOG.md
-          sed -i -e "s/$latest-/$version-/g" -e "s/$latest\./$version./g" README.md PYSPARK-DEPS.md python/README.md
-          ./set-version.sh $version
+          sed -i "s/-SNAPSHOT//g" pom.xml examples/scala/pom.xml
+          sed -i "s/$latest-/$version-/g" README.md
 
           # commit changes to local repo
           git config --global user.name "$(git --no-pager log --format=format:'%an' -n 1)"
           git config --global user.email "$(git --no-pager log --format=format:'%ae' -n 1)"
           echo "Committing release to local git"
-          git add pom.xml python/setup.py CHANGELOG.md README.md python/README.md
-          git commit -m "Releasing $version"
+          git commit -a -m "Releasing $version"
           git tag -a "v${version}" -m "Release v${version}"
 
           # updating main and pushing a tag for the release
