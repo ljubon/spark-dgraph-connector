@@ -22,7 +22,7 @@ jobs:
   prepare-release:
     name: Prepare release
     runs-on: ubuntu-latest
-    if: ${{ !github.event.repository.fork }}
+    # if: ${{ !github.event.repository.fork }}
     permissions:
       contents: write # required to push to a branch 
     outputs:
@@ -74,9 +74,9 @@ jobs:
           git commit -m "Releasing $version"
           git tag -a "v${version}" -m "Release v${version}"
 
-          # updating master and pushing a tag for the release
+          # updating main and pushing a tag for the release
           echo "Pushing release commit and tag to origin"
-          git push origin main "v${version}" --tags
+          git push origin test-release "v${version}" --tags
 
           # share release version to next job
           echo "release_tag_version=v${version}" >> "$GITHUB_OUTPUT"
@@ -200,7 +200,7 @@ jobs:
             patch=${version/*./}
             majmin=${version%.${patch}}
           
-            if [[ $branch == "main" ]]
+            if [[ $branch == "test-release" ]]
             then
               # minor version bump
               if [[ $version != *".0" ]]
@@ -238,6 +238,6 @@ jobs:
           
           # push version bump to origin
           echo "Pushing release commit to origin"
-          git push origin "main"
+          git push origin "test-release"
           # NOTE: This push will not trigger a CI as we are using GITHUB_TOKEN to push
           # More info on: https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
