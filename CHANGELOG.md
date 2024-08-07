@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [UNRELEASED] - 2024-07-06
 
+### Changed
+- Estimator "maxLeaseId" renamed to "maxUid", as used with option `dgraph.partitioner.uidRange.estimator` ([pull #221](https://github.com/G-Research/spark-dgraph-connector/pull/221)).
+- Upgr
+
 ## [0.11.0] - 2024-01-09
 
 ### Added
