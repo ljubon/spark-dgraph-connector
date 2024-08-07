@@ -14,15 +14,12 @@ on:
         default: true
         type: boolean
 
-env:
-  PYTHON_VERSION: "3.10"
-
 jobs:
 
   prepare-release:
     name: Prepare release
     runs-on: ubuntu-latest
-    if: ${{ !github.event.repository.fork }}
+    # if: ${{ !github.event.repository.fork }}
     permissions:
       contents: write # required to push to a branch 
     outputs:
@@ -58,25 +55,26 @@ jobs:
           # get latest and release version
           latest=$(grep --max-count=1 "<version>.*</version>" README.md | sed -E -e "s/\s*<[^>]+>//g" -e "s/-[0-9.]+//g")
           version=$(grep --max-count=1 "<version>.*</version>" pom.xml | sed -E -e "s/\s*<[^>]+>//g" -e "s/-SNAPSHOT//" -e "s/-[0-9.]+//g")
+          spark=$(git rev-parse --abbrev-ref HEAD | sed -e "s/^spark-//" -e "s/_.*//")
 
           # update change
           echo "Releasing ${#changes[@]} changes as version $version:"
           for (( i=0; i<${#changes[@]}; i++ )); do echo "${changes[$i]}" ; done
+
           sed -i "s/## \[UNRELEASED\] - YYYY-MM-DD/## [$version] - $(date +%Y-%m-%d)/" CHANGELOG.md
-          sed -i -e "s/$latest-/$version-/g" -e "s/$latest\./$version./g" README.md PYSPARK-DEPS.md python/README.md
-          ./set-version.sh $version
+          sed -i "s/-SNAPSHOT//g" pom.xml examples/scala/pom.xml
+          sed -i "s/$latest-/$version-/g" README.md
 
           # commit changes to local repo
           git config --global user.name "$(git --no-pager log --format=format:'%an' -n 1)"
           git config --global user.email "$(git --no-pager log --format=format:'%ae' -n 1)"
           echo "Committing release to local git"
-          git add pom.xml python/setup.py CHANGELOG.md README.md python/README.md
-          git commit -m "Releasing $version"
+          git add pom.xml examples/scala/pom.xml CHANGELOG.md README.md
           git tag -a "v${version}" -m "Release v${version}"
 
           # updating main and pushing a tag for the release
           echo "Pushing release commit and tag to origin"
-          git push origin main "v${version}" --tags
+          git push origin test-release "v${version}" --tags
 
           # share release version to next job
           echo "release_tag_version=v${version}" >> "$GITHUB_OUTPUT"
@@ -120,10 +118,6 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - uses: actions/setup-python@v5 
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Cache Maven packages
         id: cache-maven
         uses: actions/cache@v4
@@ -132,13 +126,6 @@ jobs:
           key: ${{ runner.os }}-mvn-build-${{ matrix.params.spark-version }}-${{ matrix.params.scala-version }}-${{ hashFiles('pom.xml') }}
           restore-keys: ${{ runner.os }}-mvn-build-${{ matrix.params.spark-version }}-${{ matrix.params.scala-version }}-
       
-      - name: Cache Pip packages
-        id: cache-pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-whl-${{ env.PYTHON_VERSION }}-${{ matrix.params.spark-version }}
-
       - name: Publish maven artifacts
         id: publish-maven
         run: |
@@ -195,12 +182,16 @@ jobs:
           function next_version {
             local version=$1
             local branch=$2
-          
+
             patch=${version/*./}
             majmin=${version%.${patch}}
-          
-            if [[ $branch == "main" ]]
+
+            if [[ $branch == *"_"* ]]
             then
+              # patch version bump
+              next=${majmin}.$((patch+1))
+              echo "$next"
+            else
               # minor version bump
               if [[ $version != *".0" ]]
               then
@@ -211,32 +202,39 @@ jobs:
               min=${majmin#${maj}.}
               next=${maj}.$((min+1)).0
               echo "$next"
-            else
-              # patch version bump
-              next=${majmin}.$((patch+1))
-              echo "$next"
             fi
           }
           
           # get release and next version
-          version=$(grep --max-count=1 "<version>.*</version>" pom.xml | sed -E -e "s/\s*<[^>]+>//g")
-          pkg_version="${version/-*/}"
-          branch=$(git rev-parse --abbrev-ref HEAD)
-          next_pkg_version="$(next_version "$pkg_version" "$branch")"
+          version=$(grep --max-count=1 "<version>.*</version>" pom.xml | sed -E -e "s/\s*<[^>]+>//g" -e "s/-SNAPSHOT//" -e "s/-[0-9.]+//g")
+          spark=$(git rev-parse --abbrev-ref HEAD | sed -e "s/^spark-//" -e "s/_.*//")
+          spark_branch=$(git rev-parse --abbrev-ref HEAD)
+          next=$(next_version "$version" "$spark_branch")
           
+          # push release commit
+          echo "Pushing release commit and tag to origin"
+          git push origin "$spark_branch" "v${version}_spark-$spark"
+          echo
+
+          # release the package
+          echo "Releasing package"
+          mvn nexus-staging:release
+          echo
+
           # bump the version
-          echo "Bump version to $next_pkg_version"
-          ./set-version.sh $next_pkg_version-SNAPSHOT
+          echo "Bump version to $next"
+          sed -i "1,10s/$version-$spark/$next-$spark-SNAPSHOT/" pom.xml examples/scala/pom.xml
           
           # commit changes to local repo
-          git config --global user.name "$(git --no-pager log --format=format:'%an' -n 1)"
-          git config --global user.email "$(git --no-pager log --format=format:'%ae' -n 1)"
-
+          echo
           echo "Committing release to local git"
-          git commit -a -m "Post-release version bump to $next_pkg_version"
-          
+          git commit -a -m "Post-release version bump to $next"
+          git show HEAD
+          echo
+
           # push version bump to origin
-          echo "Pushing release commit to origin"
-          git push origin "main"
+          echo "Pushing release commit and tag to origin"
+          git push origin "$spark_branch"
+          echo
           # NOTE: This push will not trigger a CI as we are using GITHUB_TOKEN to push
           # More info on: https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
