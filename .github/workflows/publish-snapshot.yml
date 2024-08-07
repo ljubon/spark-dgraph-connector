@@ -5,9 +5,6 @@ on:
   push:
     branches: ["test-release"]
 
-env:
-  PYTHON_VERSION: "3.10"
-
 jobs:
   snapshot:
     name: Release snapshot Spark:${{ matrix.params.spark-version }} - Scala:${{ matrix.params.scala-version }}
@@ -52,10 +49,6 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - uses: actions/setup-python@v5 
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Cache Maven packages
         id: cache-maven
         uses: actions/cache@v4
@@ -64,13 +57,6 @@ jobs:
           key: ${{ runner.os }}-mvn-build-${{ matrix.params.spark-version }}-${{ matrix.params.scala-version }}-${{ hashFiles('pom.xml') }}
           restore-keys: ${{ runner.os }}-mvn-build-${{ matrix.params.spark-version }}-${{ matrix.params.scala-version }}-
       
-      - name: Cache Pip packages
-        id: cache-pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-whl-${{ env.PYTHON_VERSION }}-${{ matrix.params.spark-version }}
-
       - name: Check if this is a SNAPSHOT version
         id: check-snapshot
         run: |
@@ -86,8 +72,6 @@ jobs:
 
           # required by mvn
           mkdir -p ~/.ivy2
-          # required by ./test-release.sh
-          pip3 install virtualenv
 
           ./set-version.sh ${{ matrix.params.spark-version }} ${{ matrix.params.scala-version }}
           mvn clean deploy -Dsign
